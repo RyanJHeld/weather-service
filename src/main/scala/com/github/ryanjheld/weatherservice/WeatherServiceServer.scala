@@ -1,7 +1,6 @@
 package com.github.ryanjheld.weatherservice
 
 import cats.effect.Async
-import cats.syntax.all._
 import com.comcast.ip4s._
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder

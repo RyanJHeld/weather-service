@@ -5,7 +5,6 @@ import cats.implicits._
 import io.circe.{Encoder, Decoder, HCursor}
 import io.circe.generic.semiauto._
 import org.http4s._
-//import org.http4s.implicits._
 import org.http4s.client.Client
 import org.http4s.client.dsl.Http4sClientDsl
 import org.http4s.circe._
@@ -47,48 +46,15 @@ object Weather {
     private def getAlertReport(alerts: List[Alert]): String = {
       val alertToString: Alert => String = alert => s"${alert.eventName}: ${alert.description}"
       val alertsString = if (alerts.isEmpty) "No active weather alerts."
-        else "\n" + alerts.map(alertToString).mkString("\n")
+      else "\n" + alerts.map(alertToString).mkString("\n")
       s"Weather alerts: $alertsString"
     }
 
+    implicit val weatherEncoder: Encoder[WeatherReport] = deriveEncoder[WeatherReport]
+
+    implicit def weatherEntityEncoder[F[_]]: EntityEncoder[F, WeatherReport] =
+      jsonEncoderOf
   }
-
-  implicit val alertDecoder: Decoder[Alert] = new Decoder[Alert] {
-    final def apply(c: HCursor): Decoder.Result[Alert] =
-      for {
-        name <- c.downField("event").as[String]
-        description <- c.downField("description").as[String]
-      } yield Alert(name, description)
-
-  }
-
-  implicit val conditionDecoder: Decoder[WeatherCondition] = new Decoder[WeatherCondition] {
-    final def apply(c: HCursor): Decoder.Result[WeatherCondition] =
-      for {
-        name <- c.downField("main").as[String]
-        description <- c.downField("description").as[String]
-      } yield WeatherCondition(name, description)
-
-  }
-
-  implicit val weatherDecoder: Decoder[WeatherResponse] = new Decoder[WeatherResponse] {
-    final def apply(c: HCursor): Decoder.Result[WeatherResponse] =
-      for {
-        temp <- c.downField("current").downField("temp").as[Double]
-        conditions <- c.downField("current").downField("weather").as[List[WeatherCondition]]
-        alerts <- c.downField("alerts").as[Option[List[Alert]]]
-      } yield WeatherResponse(temp, conditions, alerts.getOrElse(List.empty[Alert]))
-//      } yield WeatherResponse(temp, conditions, List.empty[Alert])
-
-  }
-
-  implicit val weatherEncoder: Encoder[WeatherReport] = deriveEncoder[WeatherReport]
-
-  implicit def weatherEntityEncoder[F[_]]: EntityEncoder[F, WeatherReport] =
-    jsonEncoderOf
-
-  implicit def weatherEntityDecoder[F[_] : Concurrent]: EntityDecoder[F, WeatherResponse] =
-    jsonOf
 
   case class WeatherResponse(
     temp: Double,
@@ -96,15 +62,50 @@ object Weather {
     alerts: List[Alert]
   )
 
+  object WeatherResponse {
+    implicit val weatherDecoder: Decoder[WeatherResponse] = new Decoder[WeatherResponse] {
+      final def apply(c: HCursor): Decoder.Result[WeatherResponse] =
+        for {
+          temp <- c.downField("current").downField("temp").as[Double]
+          conditions <- c.downField("current").downField("weather").as[List[WeatherCondition]]
+          alerts <- c.downField("alerts").as[Option[List[Alert]]]
+        } yield WeatherResponse(temp, conditions, alerts.getOrElse(List.empty[Alert]))
+    }
+
+    implicit def weatherEntityDecoder[F[_] : Concurrent]: EntityDecoder[F, WeatherResponse] =
+      jsonOf
+  }
+
   case class WeatherCondition(
     name: String,
     description: String
   )
 
+  object WeatherCondition {
+    implicit val conditionDecoder: Decoder[WeatherCondition] = new Decoder[WeatherCondition] {
+      final def apply(c: HCursor): Decoder.Result[WeatherCondition] =
+        for {
+          name <- c.downField("main").as[String]
+          description <- c.downField("description").as[String]
+        } yield WeatherCondition(name, description)
+    }
+  }
+
   case class Alert(
     eventName: String,
     description: String
   )
+
+  object Alert {
+    implicit val alertDecoder: Decoder[Alert] = new Decoder[Alert] {
+      final def apply(c: HCursor): Decoder.Result[Alert] =
+        for {
+          name <- c.downField("event").as[String]
+          description <- c.downField("description").as[String]
+        } yield Alert(name, description)
+
+    }
+  }
 
   final case class WeatherError(e: Throwable) extends RuntimeException
 
@@ -120,7 +121,7 @@ object Weather {
       M.fromEither(Uri.fromString(uri)).flatMap(uri =>
         C.expect[WeatherResponse](GET(uri))
           .map(WeatherReport.fromWeatherResponse(_))
-          .adaptError { case t =>  WeatherError(t) }
+          .adaptError { case t => WeatherError(t) }
       )
     }
   }
